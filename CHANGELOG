@@ -1,5 +1,7 @@
 = ActiveMerchant CHANGELOG
 
+* Add NumericCurrencyCodes module for looking up ISO4217 numeric currency codes when needed. [cody]
+
 == Version 1.7.2 (August 27, 2010)
 
 * Update Braintree integration to play nicely with the braintree 2.5.0 gem [Soleone]
