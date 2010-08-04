@@ -55,7 +55,7 @@ class CentinelBuyerAuthTest < Test::Unit::TestCase
   def test_successful_validate_authentication
     @gateway.expects(:ssl_post).returns(successful_validate_authentication_response)
     
-    response = @gateway.validate_authentication("pares", :order_id => "md")
+    response = @gateway.validate_authentication("pares", :order_id => "md", :transaction_id => 'txid')
     assert_success response
     
     assert_equal "05", response.params["EciFlag"]
@@ -70,7 +70,7 @@ class CentinelBuyerAuthTest < Test::Unit::TestCase
   def test_error_validate_authentication
     @gateway.expects(:ssl_post).returns(error_validate_authentication_response)
     
-    response = @gateway.validate_authentication("pares", :order_id => "md")
+    response = @gateway.validate_authentication("pares", :order_id => "md", :transaction_id => 'txid')
 
     assert_failure response
     assert response.test?
