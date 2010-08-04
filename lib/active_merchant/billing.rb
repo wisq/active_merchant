@@ -1,4 +1,5 @@
 require 'active_merchant/billing/avs_result'
+require 'active_merchant/billing/buyer_auth_gateways'
 require 'active_merchant/billing/cvv_result'
 require 'active_merchant/billing/credit_card_methods'
 require 'active_merchant/billing/credit_card_formatting'
