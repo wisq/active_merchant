@@ -42,6 +42,25 @@ class SagePayTest < Test::Unit::TestCase
     assert_instance_of Response, response
     assert_failure response
   end
+
+  def test_supports_buyer_authentication
+    assert @gateway.supports_buyer_authentication
+  end
+  
+  def test_buyer_authentication
+    @gateway.stubs(:ssl_post).twice.returns(buyer_auth_response, successful_purchase_response)
+    
+    response = @gateway.begin_buyer_authentication(100, @credit_card, @options)
+    assert_failure response
+    assert response.buyer_auth?
+    
+    assert_equal 'BSkaFwYFFTYAGyFbEAcBFhwVEEkvLCMcGgBRUnZaTGFWc087NTFVKgAANS0KADoZCCAMBnIeOx', response.pa_req
+    assert_equal '069254975634711089', response.md
+    assert_equal 'https://test.sagepay.com/Simulator/3DAuthPage.asp', response.acs_url
+    
+    response = @gateway.complete_buyer_authentication('PaRes' => 'PARes VALUE', 'MD' => 'MD VALUE')
+    assert_success response
+  end
   
   def test_purchase_url
     assert_equal 'https://test.sagepay.com/gateway/service/vspdirect-register.vsp', @gateway.send(:url_for, :purchase)
@@ -144,13 +163,27 @@ CV2Result=NOTMATCHED
     <<-RESP
 VPSProtocol=2.23
 Status=NOTAUTHED
-StatusDetail=VSP Direct transaction from VSP Simulator.
-VPSTxId=7BBA9078-8489-48CD-BF0D-10B0E6B0EF30
-SecurityKey=DKDYLDYLXV
-AVSCV2=ALL MATCH
+StatusDetail=Direct 3D-Secure transaction from Simulator.
+VPSTxId={63FA577C-3A5E-4D02-A3C5-516EC3149F29}
+SecurityKey=IR1CD2KKGT
+AVSCV2=ADDRESS MATCH ONLY
 AddressResult=MATCHED
 PostCodeResult=MATCHED
-CV2Result=MATCHED
+CV2Result=NOTCHECKED
+3DSecureStatus=NOTAUTHED
+    RESP
+  end
+
+  def buyer_auth_response
+    <<-RESP
+VPSProtocol=2.23
+Status=3DAUTH
+3DSecureStatus=OK
+MD=069254975634711089
+ACSURL=https://test.sagepay.com/Simulator/3DAuthPage.asp
+PAReq=BSkaFwYFFTYAGyFbEAcBFhwVEEkvLCMcGgBRUnZaTGFWc087NTFVKgAANS0KADoZCCAMBnIeOx
+cWRg0LERdOOTQRDFRcVXJbUgwTMBsBCxABJw4DJHE+ERgPCi8MVC0HIAROCAAfBUk4ER89DD0IWDlfMH
+ZUclwvIlhKLV5ebHgvNkxBJ3tdMmJScCtXVkREXlcvBQoUUicYBDYcB3IiBikrNCc2LQ==
     RESP
   end
 end

@@ -7,7 +7,7 @@ module ActiveMerchant #:nodoc:
       TEST_URL = 'https://test.sagepay.com/gateway/service'
       LIVE_URL = 'https://live.sagepay.com/gateway/service'
       SIMULATOR_URL = 'https://test.sagepay.com/Simulator'
-      
+    
       APPROVED = 'OK'
     
       TRANSACTIONS = {
@@ -43,6 +43,7 @@ module ActiveMerchant #:nodoc:
     
       self.supported_cardtypes = [:visa, :master, :american_express, :discover, :jcb, :switch, :solo, :maestro, :diners_club]
       self.supported_countries = ['GB']
+      self.supports_buyer_authentication = true
       self.default_currency = 'GBP'
       
       self.homepage_url = 'http://www.sagepay.com'
@@ -57,32 +58,29 @@ module ActiveMerchant #:nodoc:
       def test?
         @options[:test] || super
       end
-      
-      def purchase(money, credit_card, options = {})
+
+      def generate_post(money, credit_card, options)
         requires!(options, :order_id)
-        
+
         post = {}
-        
+
         add_amount(post, money, options)
         add_invoice(post, options)
         add_credit_card(post, credit_card)
         add_address(post, options)
         add_customer_data(post, options)
 
+        post
+      end
+
+      def purchase(money, credit_card, options = {})
+        post = generate_post(money, credit_card, options)
         commit(:purchase, post)
       end
       
       def authorize(money, credit_card, options = {})
-        requires!(options, :order_id)
-        
-        post = {}
-        
-        add_amount(post, money, options)
-        add_invoice(post, options)
-        add_credit_card(post, credit_card)
-        add_address(post, options)
-        add_customer_data(post, options)
-
+        post = generate_post(money, credit_card, options)        
+        add_buyer_auth_flag(post, false)
         commit(:authorization, post)
       end
       
@@ -117,7 +115,28 @@ module ActiveMerchant #:nodoc:
         
         commit(:credit, post)
       end
-      
+
+      # Begins a 3D Secure transaction
+      def begin_buyer_authentication(money, credit_card, options = {})
+        post = generate_post(money, credit_card, options)
+        add_buyer_auth_flag(post, true)
+
+        response = commit(:authorization, post)
+
+        if response.success?
+          raise 'Successful authorization without 3D secure'
+        elsif !response.buyer_auth?
+          raise 'Authorization failed'
+        end
+
+        response
+      end
+
+      # Completes a 3D Secure transaction
+      def complete_buyer_authentication(params)
+        commit(:complete_buyer_auth, 'PARes' => params['PaRes'], 'MD' => params['MD'])
+      end
+
       private
       def add_reference(post, identification)
         order_id, transaction_id, authorization, security_key = identification.split(';') 
@@ -152,6 +171,10 @@ module ActiveMerchant #:nodoc:
         add_pair(post, :CustomerEMail, options[:email][0,255]) unless options[:email].blank?
         add_pair(post, :BillingPhone, options[:phone].gsub(/[^0-9+]/, '')[0,20]) unless options[:phone].blank?
         add_pair(post, :ClientIPAddress, options[:ip])
+      end
+
+      def add_buyer_auth_flag(post, enable)
+        add_pair(post, :Apply3DSecure, enable ? '3' : '2')
       end
 
       def add_address(post, options)
@@ -237,7 +260,11 @@ module ActiveMerchant #:nodoc:
             :street_match => AVS_CVV_CODE[ response["AddressResult"] ],
             :postal_match => AVS_CVV_CODE[ response["PostCodeResult"] ],
           },
-          :cvv_result => AVS_CVV_CODE[ response["CV2Result"] ]
+          :cvv_result => AVS_CVV_CODE[ response["CV2Result"] ],
+          :buyer_auth => response["Status"] == '3DAUTH',
+          :pa_req => response["PAReq"],
+          :md => response["MD"],
+          :acs_url => response["ACSURL"]
         )
       end
       
@@ -259,12 +286,28 @@ module ActiveMerchant #:nodoc:
       end
       
       def build_url(action)
-        endpoint = [ :purchase, :authorization ].include?(action) ? "vspdirect-register" : TRANSACTIONS[action].downcase
+        endpoint =
+          if action == :complete_buyer_auth
+            'direct3dcallback'
+          elsif [ :purchase, :authorization ].include?(action)
+            'vspdirect-register'
+          else
+            TRANSACTIONS[action].downcase
+          end
+
         "#{test? ? TEST_URL : LIVE_URL}/#{endpoint}.vsp"
       end
       
       def build_simulator_url(action)
-        endpoint = [ :purchase, :authorization ].include?(action) ? "VSPDirectGateway.asp" : "VSPServerGateway.asp?Service=Vendor#{TRANSACTIONS[action].capitalize}Tx"
+        endpoint =
+          if action == :complete_buyer_auth
+            'VSPDirectCallback.asp'
+          elsif [ :purchase, :authorization ].include?(action)
+            'VSPDirectGateway.asp'
+          else
+            "VSPServerGateway.asp?Service=Vendor#{TRANSACTIONS[action].capitalize}Tx"
+          end
+
         "#{SIMULATOR_URL}/#{endpoint}"
       end
 
